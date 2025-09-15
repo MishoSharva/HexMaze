@@ -8,11 +8,11 @@ TOP_H = 100
 screen = pygame.display.set_mode((W, H))
 clock = pygame.time.Clock()
 
-BG      = (248, 249, 251)
-INK     = (25, 28, 33)
-PANEL   = (255, 255, 255)
-STROKE  = (228, 232, 238)
-ACCENT  = (120, 105, 240)
+BG    = (248, 249, 251)
+INK   = (25, 28, 33)
+PANEL = (255, 255, 255)
+STROKE= (228, 232, 238)
+ACCENT= (120, 105, 240)
 
 FONT = pygame.font.SysFont("consolas", 18)
 BIG  = pygame.font.SysFont("consolas", 22, bold=True)
@@ -26,7 +26,6 @@ class InputBox:
         self.cursor_visible = True
         self.cursor_timer = 0
         self.cursor_interval = 500
-
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
             self.active = self.rect.collidepoint(event.pos)
@@ -38,7 +37,6 @@ class InputBox:
             else:
                 if event.unicode.isdigit():
                     self.text += event.unicode
-
     def update(self, dt_ms):
         if self.active:
             self.cursor_timer += dt_ms
@@ -47,7 +45,6 @@ class InputBox:
                 self.cursor_timer = 0
         else:
             self.cursor_visible = False
-
     def draw(self, surf):
         label_surf = FONT.render(self.label, True, (120,126,137))
         surf.blit(label_surf, (self.rect.x, self.rect.y - 20))
@@ -61,7 +58,6 @@ class InputBox:
             cx = tx + txt_surf.get_width() + 2
             cy = self.rect.y + 8
             pygame.draw.line(surf, INK, (cx, cy), (cx, self.rect.y + self.rect.height - 8), 2)
-
     def get_int(self, default=0, minv=None, maxv=None):
         try:
             v = int(self.text)
@@ -76,14 +72,11 @@ class Button:
         self.rect = pygame.Rect(x, y, w, h)
         self.label = label
         self.hover = False
-
     def handle_event(self, event):
         if event.type == pygame.MOUSEMOTION:
             self.hover = self.rect.collidepoint(event.pos)
-
     def clicked(self, event):
         return event.type == pygame.MOUSEBUTTONDOWN and self.rect.collidepoint(event.pos)
-
     def draw(self, surf):
         bg = (245, 243, 255) if self.hover else PANEL
         pygame.draw.rect(surf, bg, self.rect, border_radius=10)
@@ -100,7 +93,7 @@ def pointy_hex_corners(cx, cy, r):
         pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
     return pts
 
-def hex_layout_positions(rows, cols, r, start_x, start_y):
+def hex_layout_positions_with_idx(rows, cols, r, start_x, start_y):
     dx = math.sqrt(3) * r
     dy = 1.5 * r
     centers = []
@@ -109,7 +102,7 @@ def hex_layout_positions(rows, cols, r, start_x, start_y):
         for cc in range(cols):
             x = start_x + cc * dx + row_offset
             y = start_y + rr * dy
-            centers.append((x, y))
+            centers.append((x, y, rr, cc))
     return centers
 
 def grid_pixel_size(rows, cols, r):
@@ -152,7 +145,7 @@ def recompute_grid():
     req_w, req_h = grid_pixel_size(rows, cols, r)
     ox = max(10, (avail_w - req_w) // 2)
     oy = TOP_H + 10 + max(0, (avail_h - req_h) // 2)
-    centers_cache = hex_layout_positions(rows, cols, r, ox + r, oy + r)
+    centers_cache = hex_layout_positions_with_idx(rows, cols, r, ox + r, oy + r)
     cache_params = (rows, cols, r, ox, oy, bw)
 
 running = True
@@ -192,8 +185,9 @@ while running:
 
     if cache_params:
         rows, cols, r, ox, oy, bw = cache_params
-        for (cx, cy) in centers_cache:
-            pygame.draw.polygon(screen, INK, pointy_hex_corners(cx, cy, r), bw)
+        for (cx, cy, rr, cc) in centers_cache:
+            if rr == 0 or rr == rows - 1 or cc == 0 or cc == cols - 1:
+                pygame.draw.polygon(screen, INK, pointy_hex_corners(cx, cy, r), bw)
 
     pygame.display.flip()
 
