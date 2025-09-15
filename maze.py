@@ -1,390 +1,201 @@
-import math, pygame, sys, time, random
+import sys, math
+import pygame
 
 pygame.init()
-W, H = 1100, 820
+pygame.display.set_caption("Hex Grid Generator — maze.py")
+W, H = 1200, 900
+TOP_H = 100
 screen = pygame.display.set_mode((W, H))
-pygame.display.set_caption("Hex Honeycomb")
 clock = pygame.time.Clock()
-FONT = pygame.font.SysFont("consolas", 22)
-SMALL = pygame.font.SysFont("consolas", 16)
 
-BG = (252, 253, 255)
-INK = (25, 28, 33)
-PANEL = (245, 246, 249)
-LINE = (220, 224, 231)
-ACC = (120, 105, 240)
-ERR = (205, 60, 80)
-OK = (50, 170, 80)
+BG      = (248, 249, 251)
+INK     = (25, 28, 33)
+PANEL   = (255, 255, 255)
+STROKE  = (228, 232, 238)
+ACCENT  = (120, 105, 240)
 
-boxes = [
-    {"rect": pygame.Rect(20, 20, 140, 42), "label": "Width (cols)", "text": "20", "active": False, "ph": "20"},
-    {"rect": pygame.Rect(180, 20, 140, 42), "label": "Height (rows)", "text": "20", "active": False, "ph": "20"},
-    {"rect": pygame.Rect(340, 20, 160, 42), "label": "Hex size px (r)", "text": "", "active": False, "ph": "auto"},
-    {"rect": pygame.Rect(520, 20, 160, 42), "label": "Line width", "text": "2", "active": False, "ph": "2"},
-]
+FONT = pygame.font.SysFont("consolas", 18)
+BIG  = pygame.font.SysFont("consolas", 22, bold=True)
 
-btn = pygame.Rect(700, 20, 220, 42)
+class InputBox:
+    def __init__(self, x, y, w, h, label, value=""):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.label = label
+        self.text = str(value)
+        self.active = False
+        self.cursor_visible = True
+        self.cursor_timer = 0
+        self.cursor_interval = 500
 
-cols = rows = 0
-radius_override = 0
-line_w = 2
-generated = False
-error = ""
-blink_on = True
-last_blink = time.time()
-
-cells = {}
-centers = {}
-rad_cached = 0
-
-EVENQ = [(+1,0),(0,+1),(-1,+1),(-1,0),(0,-1),(+1,-1)]
-ODDQ  = [(+1,0),(+1,+1),(0,+1),(-1,0),(0,-1),(+1,-1)]
-
-def parse_int(s):
-    try: return int(s)
-    except: return 0
-
-def auto_radius(c, r):
-    if c <= 0 or r <= 0: return 0
-    margin = 30
-    w_need = 2 + 1.5 * (c - 1)
-    h_need = r + 0.5 * (c > 1)
-    by_w = (W - 2 * margin) / w_need
-    by_h = (H - (90 + margin) - margin) / (math.sqrt(3) * h_need)
-    return max(2, min(by_w, by_h))
-
-def hex_points(cx, cy, r):
-    return [(cx + r * math.cos(math.radians(60 * i)),
-             cy + r * math.sin(math.radians(60 * i))) for i in range(6)]
-
-def neighbors_of(x, y):
-    dirs = EVENQ if (x % 2 == 0) else ODDQ
-    for d,(dx,dy) in enumerate(dirs):
-        yield d, x+dx, y+dy
-
-def build_centers(c, r, rad):
-    cs = {}
-    w = 2 * rad
-    h = math.sqrt(3) * rad
-    sx = 30 + w/2
-    sy = 90 + 30 + h/2
-    for x in range(c):
-        oy = (h/2) if (x % 2) else 0
-        cx = sx + x * (1.5 * rad)
-        for y in range(r):
-            cy = sy + oy + y * h
-            cs[(x,y)] = (cx, cy)
-    return cs
-
-def build_cells(c, r):
-    return {(x,y): {"walls":[True]*6} for x in range(c) for y in range(r)}
-
-def in_bounds(x,y):
-    return 0 <= x < cols and 0 <= y < rows
-
-def draw_outline(rad, lw):
-    drawn = set()
-    for (x, y), (cx, cy) in centers.items():
-        pts = hex_points(cx, cy, rad)  # 6 corners of this hex
-        dirs = EVENQ if (x % 2 == 0) else ODDQ
-        for d, (dx, dy) in enumerate(dirs):
-            nx, ny = x + dx, y + dy
-            if not in_bounds(nx, ny):  # neighbor missing → edge is on border
-                a = pts[d]
-                b = pts[(d + 1) % 6]
-                # deduplicate line regardless of direction
-                key  = (round(a[0],2), round(a[1],2), round(b[0],2), round(b[1],2))
-                rkey = (key[2], key[3], key[0], key[1])
-                if key not in drawn and rkey not in drawn:import math, pygame, sys, time
-
-pygame.init()
-W, H = 1100, 820
-screen = pygame.display.set_mode((W, H))
-pygame.display.set_caption("Hex Honeycomb")
-clock = pygame.time.Clock()
-FONT = pygame.font.SysFont("consolas", 22)
-SMALL = pygame.font.SysFont("consolas", 16)
-
-BG = (252, 253, 255)
-INK = (25, 28, 33)
-PANEL = (245, 246, 249)
-LINE = (220, 224, 231)
-ACC = (120, 105, 240)
-ERR = (205, 60, 80)
-OK = (50, 170, 80)
-
-boxes = [
-    {"rect": pygame.Rect(20, 20, 140, 42), "label": "Width (cols)", "text": "20", "active": False, "ph": "20"},
-    {"rect": pygame.Rect(180, 20, 140, 42), "label": "Height (rows)", "text": "20", "active": False, "ph": "20"},
-    {"rect": pygame.Rect(340, 20, 160, 42), "label": "Hex size px (r)", "text": "", "active": False, "ph": "auto"},
-    {"rect": pygame.Rect(520, 20, 160, 42), "label": "Line width", "text": "2", "active": False, "ph": "2"},
-]
-
-btn = pygame.Rect(700, 20, 220, 42)
-
-cols = rows = 0
-radius_override = 0
-line_w = 2
-generated = False
-error = ""
-blink_on = True
-last_blink = time.time()
-
-centers = {}
-rad_cached = 0
-
-EVENQ = [(+1,0),(0,+1),(-1,+1),(-1,0),(0,-1),(+1,-1)]
-ODDQ  = [(+1,0),(+1,+1),(0,+1),(-1,0),(0,-1),(+1,-1)]
-
-def parse_int(s):
-    try: return int(s)
-    except: return 0
-
-def auto_radius(c, r):
-    if c <= 0 or r <= 0: return 0
-    margin = 30
-    w_need = 2 + 1.5 * (c - 1)
-    h_need = r + 0.5 * (c > 1)
-    by_w = (W - 2 * margin) / w_need
-    by_h = (H - (90 + margin) - margin) / (math.sqrt(3) * h_need)
-    return max(2, min(by_w, by_h))
-
-def hex_points(cx, cy, r):
-    return [(cx + r * math.cos(math.radians(60 * i)),
-             cy + r * math.sin(math.radians(60 * i))) for i in range(6)]
-
-def build_centers(c, r, rad):
-    cs = {}
-    w = 2 * rad
-    h = math.sqrt(3) * rad
-    sx = 30 + w/2
-    sy = 90 + 30 + h/2
-    for x in range(c):
-        oy = (h/2) if (x % 2) else 0
-        cx = sx + x * (1.5 * rad)
-        for y in range(r):
-            cy = sy + oy + y * h
-            cs[(x,y)] = (cx, cy)
-    return cs
-
-def in_bounds(x,y):
-    return 0 <= x < cols and 0 <= y < rows
-
-def _edge_key(a, b):
-    ax, ay = round(a[0], 3), round(a[1], 3)
-    bx, by = round(b[0], 3), round(b[1], 3)
-    return (ax, ay, bx, by) if (ax, ay) <= (bx, by) else (bx, by, ax, ay)
-
-def draw_outer_border(rad, lw):
-    if not centers: return
-    edges = set()
-    pts_cache = {}
-    for (x, y), (cx, cy) in centers.items():
-        pts = pts_cache.get((cx, cy))
-        if pts is None:
-            pts = hex_points(cx, cy, rad)
-            pts_cache[(cx, cy)] = pts
-        dirs = EVENQ if (x % 2 == 0) else ODDQ
-        for d, (dx, dy) in enumerate(dirs):
-            nx, ny = x + dx, y + dy
-            if not in_bounds(nx, ny):
-                a = pts[d]
-                b = pts[(d + 1) % 6]
-                edges.add(_edge_key(a, b))
-    if not edges: return
-    adj = {}
-    def add_adj(p, q):
-        adj.setdefault(p, []).append(q)
-        adj.setdefault(q, []).append(p)
-    for ax, ay, bx, by in edges:
-        p = (ax, ay)
-        q = (bx, by)
-        add_adj(p, q)
-    start = min(adj.keys(), key=lambda p: (p[0], p[1]))
-    def angle(c, p): return math.atan2(p[1]-c[1], p[0]-c[0])
-    ordered = {v: sorted(n, key=lambda k: angle(v, k)) for v, n in adj.items()}
-    def prev_idx(lst, i): return (i - 1) % len(lst)
-    path = [start]
-    curr = start
-    if not ordered[curr]: return
-    nxt = ordered[curr][0]
-    used = {_edge_key(curr, nxt)}
-    path.append(nxt)
-    prev = start
-    steps = 0
-    limit = len(edges) + 8
-    curr, prev = nxt, curr
-    while (curr != start or prev == start) and steps < limit:
-        nbrs = ordered[curr]
-        try:
-            ip = nbrs.index(prev)
-        except ValueError:
-            break
-        cand = nbrs[prev_idx(nbrs, ip)]
-        ek = _edge_key(curr, cand)
-        if ek not in edges or ek in used:
-            alt = nbrs[(ip + 1) % len(nbrs)]
-            ek2 = _edge_key(curr, alt)
-            if ek2 in edges and ek2 not in used:
-                cand, ek = alt, ek2
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            self.active = self.rect.collidepoint(event.pos)
+        if event.type == pygame.KEYDOWN and self.active:
+            if event.key == pygame.K_BACKSPACE:
+                self.text = self.text[:-1]
+            elif event.key in (pygame.K_RETURN, pygame.K_ESCAPE, pygame.K_TAB):
+                self.active = False
             else:
-                break
-        used.add(ek)
-        path.append(cand)
-        prev, curr = curr, cand
-        steps += 1
-    poly = [(int(round(x)), int(round(y))) for (x, y) in path]
-    if len(poly) >= 3:
-        pygame.draw.lines(screen, INK, True, poly, lw)
+                if event.unicode.isdigit():
+                    self.text += event.unicode
 
-def draw_ui():
-    pygame.draw.rect(screen, PANEL, (0, 0, W, 86))
-    for b in boxes:
-        pygame.draw.rect(screen, (255, 255, 255), b["rect"], 0, border_radius=8)
-        pygame.draw.rect(screen, ACC if b["active"] else LINE, b["rect"], 2, border_radius=8)
-        lab = SMALL.render(b["label"], True, (110,115,125))
-        screen.blit(lab, (b["rect"].x, b["rect"].y - 18))
-        content = b["text"] if b["text"] else b["ph"]
-        col = INK if b["text"] else (150,155,165)
-        val = FONT.render(content, True, col)
-        screen.blit(val, (b["rect"].x + 10, b["rect"].y + 8))
-        if b["active"] and blink_on:
-            caret_x = b["rect"].x + 10 + val.get_width()
-            pygame.draw.line(screen, ACC, (caret_x, b["rect"].y + 8), (caret_x, b["rect"].y + b["rect"].height - 8), 2)
-    pygame.draw.rect(screen, ACC, btn, 0, border_radius=8)
-    screen.blit(FONT.render("Generate", True, (255,255,255)), (btn.x + 18, btn.y + 8))
+    def update(self, dt_ms):
+        if self.active:
+            self.cursor_timer += dt_ms
+            if self.cursor_timer >= self.cursor_interval:
+                self.cursor_visible = not self.cursor_visible
+                self.cursor_timer = 0
+        else:
+            self.cursor_visible = False
 
-def handle_generate():
-    global cols, rows, radius_override, line_w, generated, error, centers, rad_cached
-    c = parse_int(boxes[0]["text"])
-    r = parse_int(boxes[1]["text"])
-    rin = parse_int(boxes[2]["text"])
-    lw = max(1, parse_int(boxes[3]["text"]) or 2)
-    cols, rows = max(0, c), max(0, r)
-    radius_override = max(0, rin)
-    line_w = lw
-    generated, error = (cols > 0 and rows > 0), ""
-    if not generated: return
-    rad = radius_override if radius_override > 0 else auto_radius(cols, rows)
-    if rad < 3:
-        generated = False
-        error = "Too big to fit. Lower counts."
-        return
-    centers = build_centers(cols, rows, rad)
-    rad_cached = rad
+    def draw(self, surf):
+        label_surf = FONT.render(self.label, True, (120,126,137))
+        surf.blit(label_surf, (self.rect.x, self.rect.y - 20))
+        pygame.draw.rect(surf, PANEL, self.rect, border_radius=6)
+        pygame.draw.rect(surf, ACCENT if self.active else STROKE, self.rect, 2, border_radius=6)
+        txt_surf = FONT.render(self.text or "", True, INK)
+        tx = self.rect.x + 10
+        ty = self.rect.y + (self.rect.height - txt_surf.get_height()) // 2
+        surf.blit(txt_surf, (tx, ty))
+        if self.active and self.cursor_visible:
+            cx = tx + txt_surf.get_width() + 2
+            cy = self.rect.y + 8
+            pygame.draw.line(surf, INK, (cx, cy), (cx, self.rect.y + self.rect.height - 8), 2)
 
-running = True
-while running:
-    for e in pygame.event.get():
-        if e.type == pygame.QUIT:
-            pygame.quit(); sys.exit()
-        if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-            for b in boxes:
-                b["active"] = b["rect"].collidepoint(e.pos)
-            if btn.collidepoint(e.pos):
-                handle_generate()
-        if e.type == pygame.KEYDOWN:
-            active = next((b for b in boxes if b["active"]), None)
-            if active:
-                if e.key == pygame.K_BACKSPACE:
-                    active["text"] = active["text"][:-1]
-                elif e.key in (pygame.K_RETURN, pygame.K_TAB):
-                    pass
-                else:
-                    if e.unicode.isdigit() and len(active["text"]) < 6:
-                        active["text"] += e.unicode
-    now = time.time()
-    if now - last_blink > 0.5:
-        blink_on = not blink_on
-        last_blink = now
-    screen.fill(BG)
-    draw_ui()
-    if generated and rad_cached >= 2:
-        draw_outer_border(rad_cached, line_w)
-        if not error:
-            screen.blit(SMALL.render(f"{cols} x {rows}, r={int(rad_cached)}, lw={line_w}", True, OK), (20, 74))
-    if error:
-        screen.blit(SMALL.render(error, True, ERR), (20, 74))
-    pygame.display.flip()
-    clock.tick(60)
+    def get_int(self, default=0, minv=None, maxv=None):
+        try:
+            v = int(self.text)
+        except:
+            v = default
+        if minv is not None: v = max(minv, v)
+        if maxv is not None: v = min(maxv, v)
+        return v
 
-                    pygame.draw.line(screen, INK, a, b, lw)
-                    drawn.add(key)
+class Button:
+    def __init__(self, x, y, w, h, label):
+        self.rect = pygame.Rect(x, y, w, h)
+        self.label = label
+        self.hover = False
 
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEMOTION:
+            self.hover = self.rect.collidepoint(event.pos)
 
+    def clicked(self, event):
+        return event.type == pygame.MOUSEBUTTONDOWN and self.rect.collidepoint(event.pos)
 
-def draw_ui():
-    pygame.draw.rect(screen, PANEL, (0, 0, W, 86))
-    for b in boxes:
-        pygame.draw.rect(screen, (255, 255, 255), b["rect"], 0, border_radius=8)
-        pygame.draw.rect(screen, ACC if b["active"] else LINE, b["rect"], 2, border_radius=8)
-        lab = SMALL.render(b["label"], True, (110,115,125))
-        screen.blit(lab, (b["rect"].x, b["rect"].y - 18))
-        content = b["text"] if b["text"] else b["ph"]
-        col = INK if b["text"] else (150,155,165)
-        val = FONT.render(content, True, col)
-        screen.blit(val, (b["rect"].x + 10, b["rect"].y + 8))
-        if b["active"] and blink_on:
-            caret_x = b["rect"].x + 10 + val.get_width()
-            pygame.draw.line(screen, ACC, (caret_x, b["rect"].y + 8), (caret_x, b["rect"].y + b["rect"].height - 8), 2)
-    pygame.draw.rect(screen, ACC, btn, 0, border_radius=8)
-    screen.blit(FONT.render("Generate", True, (255,255,255)), (btn.x + 18, btn.y + 8))
+    def draw(self, surf):
+        bg = (245, 243, 255) if self.hover else PANEL
+        pygame.draw.rect(surf, bg, self.rect, border_radius=10)
+        pygame.draw.rect(surf, ACCENT, self.rect, 2, border_radius=10)
+        label_surf = BIG.render(self.label, True, ACCENT)
+        x = self.rect.centerx - label_surf.get_width() // 2
+        y = self.rect.centery - label_surf.get_height() // 2
+        surf.blit(label_surf, (x, y))
 
-def handle_generate():
-    global cols, rows, radius_override, line_w, generated, error, centers, cells, rad_cached
-    c = parse_int(boxes[0]["text"])
-    r = parse_int(boxes[1]["text"])
-    rad_in = parse_int(boxes[2]["text"])
-    lw = max(1, parse_int(boxes[3]["text"]) or 2)
-    cols, rows = max(0,c), max(0,r)
-    radius_override = max(0, rad_in)
-    line_w = lw
-    generated, error = (cols>0 and rows>0), ""
-    if not generated:
-        return
-    rad = radius_override if radius_override>0 else auto_radius(cols, rows)
-    if rad < 3:
-        generated = False
-        error = "Too big to fit. Lower counts."
-        return
-    centers = build_centers(cols, rows, rad)
-    cells = build_cells(cols, rows)
-    rad_cached = rad
+def pointy_hex_corners(cx, cy, r):
+    pts = []
+    for i in range(6):
+        a = math.radians(60 * i - 30)
+        pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    return pts
+
+def hex_layout_positions(rows, cols, r, start_x, start_y):
+    dx = math.sqrt(3) * r
+    dy = 1.5 * r
+    centers = []
+    for rr in range(rows):
+        row_offset = (dx / 2) if (rr % 2 == 1) else 0
+        for cc in range(cols):
+            x = start_x + cc * dx + row_offset
+            y = start_y + rr * dy
+            centers.append((x, y))
+    return centers
+
+def grid_pixel_size(rows, cols, r):
+    if rows <= 0 or cols <= 0 or r <= 0:
+        return 0, 0
+    dx = math.sqrt(3) * r
+    dy = 1.5 * r
+    width = dx * (cols - 1) + 2 * r
+    height = dy * (rows - 1) + 2 * r
+    return int(math.ceil(width)), int(math.ceil(height))
+
+rows_val = 20
+cols_val = 20
+hex_r = 10
+border_w = 2
+
+pad = 16
+box_w = 140
+box_h = 40
+x0 = 20
+y0 = 20
+
+ib_rows = InputBox(x0, y0, box_w, box_h, "Height", rows_val)
+ib_cols = InputBox(x0 + (box_w + pad), y0, box_w, box_h, "Width", cols_val)
+ib_size = InputBox(x0 + 2*(box_w + pad), y0, box_w, box_h, "Hex size", hex_r)
+ib_bord = InputBox(x0 + 3*(box_w + pad), y0, box_w, box_h, "Border", border_w)
+btn = Button(x0 + 4*(box_w + pad) + 20, y0, 160, box_h, "Generate")
+
+centers_cache = []
+cache_params = None
+
+def recompute_grid():
+    global centers_cache, cache_params
+    rows = ib_rows.get_int(default=rows_val, minv=1, maxv=9999)
+    cols = ib_cols.get_int(default=cols_val, minv=1, maxv=9999)
+    r    = ib_size.get_int(default=hex_r, minv=2, maxv=200)
+    bw   = ib_bord.get_int(default=border_w, minv=1, maxv=20)
+    avail_w = W
+    avail_h = H - TOP_H - 20
+    req_w, req_h = grid_pixel_size(rows, cols, r)
+    ox = max(10, (avail_w - req_w) // 2)
+    oy = TOP_H + 10 + max(0, (avail_h - req_h) // 2)
+    centers_cache = hex_layout_positions(rows, cols, r, ox + r, oy + r)
+    cache_params = (rows, cols, r, ox, oy, bw)
 
 running = True
 while running:
-    for e in pygame.event.get():
-        if e.type == pygame.QUIT:
-            pygame.quit(); sys.exit()
-        if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-            mx,my = e.pos
-            for b in boxes:
-                b["active"] = b["rect"].collidepoint(e.pos)
-            if btn.collidepoint(e.pos):
-                handle_generate()
-        if e.type == pygame.KEYDOWN:
-            active = next((b for b in boxes if b["active"]), None)
-            if active:
-                if e.key == pygame.K_BACKSPACE:
-                    active["text"] = active["text"][:-1]
-                elif e.key in (pygame.K_RETURN, pygame.K_TAB):
-                    pass
-                else:
-                    if e.unicode.isdigit():
-                        if len(active["text"]) < 6:
-                            active["text"] += e.unicode
-    now = time.time()
-    if now - last_blink > 0.5:
-        blink_on = not blink_on
-        last_blink = now
+    dt = clock.tick(60)
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        ib_rows.handle_event(event)
+        ib_cols.handle_event(event)
+        ib_size.handle_event(event)
+        ib_bord.handle_event(event)
+        btn.handle_event(event)
+        if btn.clicked(event) or (event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN):
+            recompute_grid()
+
+    ib_rows.update(dt)
+    ib_cols.update(dt)
+    ib_size.update(dt)
+    ib_bord.update(dt)
+
     screen.fill(BG)
-    draw_ui()
-    if generated:
-        if rad_cached and rad_cached >= 2:
-            draw_outline(rad_cached, line_w)
-            if not error:
-                screen.blit(SMALL.render(f"{cols} x {rows}, r={int(rad_cached)}, lw={line_w}", True, OK), (20, 74))
-    if error:
-        screen.blit(SMALL.render(error, True, ERR), (20, 74))
+
+    bar = pygame.Rect(10, 10, W - 20, TOP_H - 20)
+    pygame.draw.rect(screen, PANEL, bar, border_radius=14)
+    pygame.draw.rect(screen, STROKE, bar, 2, border_radius=14)
+
+    ib_rows.draw(screen)
+    ib_cols.draw(screen)
+    ib_size.draw(screen)
+    ib_bord.draw(screen)
+    btn.draw(screen)
+
+    draw_area = pygame.Rect(10, TOP_H, W - 20, H - TOP_H - 10)
+    pygame.draw.rect(screen, PANEL, draw_area, border_radius=12)
+    pygame.draw.rect(screen, STROKE, draw_area, 2, border_radius=12)
+
+    if cache_params:
+        rows, cols, r, ox, oy, bw = cache_params
+        for (cx, cy) in centers_cache:
+            pygame.draw.polygon(screen, INK, pointy_hex_corners(cx, cy, r), bw)
+
     pygame.display.flip()
-    clock.tick(60)
+
+pygame.quit()
+sys.exit()
