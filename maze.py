@@ -114,6 +114,16 @@ def grid_pixel_size(rows, cols, r):
     height = dy * (rows - 1) + 2 * r
     return int(math.ceil(width)), int(math.ceil(height))
 
+DELTAS_EVEN = [(+1,0),(0,-1),(-1,-1),(-1,0),(-1,+1),(0,+1)]
+DELTAS_ODD  = [(+1,0),(+1,-1),(0,-1),(-1,0),(0,+1),(+1,+1)]
+
+def neighbor_for_edge(rr, cc, edge_index):
+    if rr % 2 == 0:
+        dc, dr = DELTAS_EVEN[edge_index]
+    else:
+        dc, dr = DELTAS_ODD[edge_index]
+    return rr + dr, cc + dc
+
 rows_val = 20
 cols_val = 20
 hex_r = 10
@@ -186,8 +196,13 @@ while running:
     if cache_params:
         rows, cols, r, ox, oy, bw = cache_params
         for (cx, cy, rr, cc) in centers_cache:
-            if rr == 0 or rr == rows - 1 or cc == 0 or cc == cols - 1:
-                pygame.draw.polygon(screen, INK, pointy_hex_corners(cx, cy, r), bw)
+            pts = pointy_hex_corners(cx, cy, r)
+            for i in range(6):
+                nr, nc = neighbor_for_edge(rr, cc, i)
+                if not (0 <= nr < rows and 0 <= nc < cols):
+                    p1 = pts[i]
+                    p2 = pts[(i + 1) % 6]
+                    pygame.draw.line(screen, INK, p1, p2, bw)
 
     pygame.display.flip()
 
